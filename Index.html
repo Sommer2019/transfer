@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deck Control</title>
+<style>
+  :root{
+    --page:#1b1d22; --panel:#22252b; --chassis:#101114; --well:#000;
+    --line:#31353d; --text:#e6e8ee; --muted:#868d99;
+    --accent:#4da3ff; --accent-dim:#274b73; --ok:#3ddc84;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--page); color:var(--text);
+    font:15px/1.5 system-ui,"Segoe UI",sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100vh; padding:32px 16px 64px;
+  }
+  .mono{font-family:ui-monospace,Consolas,monospace}
+  header{width:100%; max-width:560px; display:flex; align-items:baseline;
+    justify-content:space-between; margin-bottom:20px}
+  header h1{font-size:15px; letter-spacing:.16em; text-transform:uppercase;
+    font-weight:600; margin:0}
+  #status{font-size:12px; color:var(--muted)}
+  #status::before{content:""; display:inline-block; width:8px; height:8px;
+    border-radius:50%; background:#c0473f; margin-right:6px; vertical-align:1px;
+    transition:background .3s}
+  #status.on::before{background:var(--ok)}
+
+  /* ---- Deck-Replika ---- */
+  .deck{
+    background:linear-gradient(180deg,#15171b,var(--chassis));
+    border:1px solid #000; border-radius:22px;
+    padding:26px 30px 18px; box-shadow:0 18px 40px rgba(0,0,0,.45),
+      inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .grid{display:grid; grid-template-columns:repeat(5,72px); gap:16px}
+  .key{
+    width:72px; height:72px; border-radius:12px; background:var(--well);
+    border:1px solid #2a2d33; padding:0; cursor:pointer; overflow:hidden;
+    position:relative; transition:box-shadow .12s, border-color .12s;
+  }
+  .key img{width:100%; height:100%; transform:rotate(180deg); display:block}
+  .key .fallback{position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:10px; color:#3c4048}
+  .key.selected{border-color:var(--accent);
+    box-shadow:0 0 0 2px var(--accent-dim)}
+  .key.pressed{box-shadow:0 0 14px 3px var(--accent);
+    border-color:var(--accent)}
+  .bezel{display:flex; align-items:center; gap:12px; margin-top:18px;
+    color:var(--muted); font-size:12px}
+  .bezel input[type=range]{flex:1; accent-color:var(--accent)}
+
+  /* ---- Editor ---- */
+  .editor{
+    width:100%; max-width:560px; margin-top:26px; background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; padding:20px 22px;
+  }
+  .editor h2{font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); font-weight:600; margin:0 0 16px}
+  .editor h2 b{color:var(--text)}
+  label{display:block; font-size:12px; color:var(--muted); margin:14px 0 5px}
+  input[type=text]{
+    width:100%; background:var(--chassis); border:1px solid var(--line);
+    border-radius:8px; color:var(--text); padding:9px 11px; font-size:14px;
+  }
+  input[type=text]:focus{outline:none; border-color:var(--accent)}
+  .imgrow{display:flex; align-items:center; gap:14px; margin-top:5px}
+  .imgrow canvas{width:72px; height:72px; border-radius:10px;
+    background:var(--well); border:1px solid var(--line);
+    transform:rotate(180deg)}
+  .filebtn{font-size:13px; color:var(--muted)}
+  .actions{display:flex; gap:10px; margin-top:20px}
+  button.primary,button.ghost{
+    border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer;
+  }
+  button.primary{background:var(--accent); border:1px solid var(--accent);
+    color:#0b1420; font-weight:600}
+  button.primary:hover{filter:brightness(1.1)}
+  button.ghost{background:none; border:1px solid var(--line); color:var(--muted)}
+  button.ghost:hover{border-color:var(--muted); color:var(--text)}
+  .hint{font-size:12px; color:var(--muted); margin-top:14px}
+  @media (max-width:520px){
+    .grid{grid-template-columns:repeat(5,52px); gap:10px}
+    .key{width:52px; height:52px; border-radius:9px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Deck Control <span class="mono" style="color:var(--muted)">MK.2</span></h1>
+  <span id="status">getrennt</span>
+</header>
+
+<div class="deck">
+  <div class="grid" id="grid"></div>
+  <div class="bezel">
+    <span>Helligkeit</span>
+    <input type="range" id="brightness" min="0" max="100" value="60">
+    <span class="mono" id="brightVal">60%</span>
+  </div>
+</div>
+
+<div class="editor">
+  <h2>Taste <b id="edKey" class="mono">–</b></h2>
+
+  <label for="edLabel">Beschriftung (wird aufs Tastenbild gerendert)</label>
+  <input type="text" id="edLabel" maxlength="24" placeholder="z. B. Terminal">
+
+  <label for="edCommand">Befehl bei Tastendruck</label>
+  <input type="text" id="edCommand" class="mono"
+         placeholder='z. B. start wt  oder  code C:\Projekte'>
+
+  <label>Tastenbild</label>
+  <div class="imgrow">
+    <canvas id="preview" width="72" height="72"></canvas>
+    <div>
+      <input type="file" id="edImage" accept="image/*" class="filebtn">
+      <div class="hint">Ohne Bild wird die Beschriftung auf schwarzem Grund gerendert.</div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="btnSave">Auf Taste schreiben</button>
+    <button class="ghost" id="btnClear">Taste leeren</button>
+  </div>
+  <div class="hint" id="msg"></div>
+</div>
+
+<script>
+const KEYS = 15;
+let cfg = {brightness: 60, keys: {}};
+let selected = 0;
+let chosenImage = null;   // Image-Objekt aus Datei-Upload
+
+const grid = document.getElementById('grid');
+const preview = document.getElementById('preview');
+const pctx = preview.getContext('2d');
+
+/* ---- Deck-Replika aufbauen ---- */
+for (let i = 0; i < KEYS; i++) {
+  const b = document.createElement('button');
+  b.className = 'key'; b.dataset.key = i;
+  b.innerHTML = `<span class="fallback mono">${i}</span><img hidden>`;
+  b.onclick = () => selectKey(i);
+  grid.appendChild(b);
+}
+
+function keyEl(i){ return grid.children[i]; }
+
+function renderDeck(){
+  for (let i = 0; i < KEYS; i++) {
+    const e = cfg.keys[String(i)];
+    const img = keyEl(i).querySelector('img');
+    if (e && e.jpeg) {
+      img.src = 'data:image/jpeg;base64,' + e.jpeg;
+      img.hidden = false;
+    } else {
+      img.hidden = true;
+    }
+    keyEl(i).classList.toggle('selected', i === selected);
+  }
+}
+
+/* ---- Canvas-Pipeline: erzeugt das fertige, gedrehte 72x72-JPEG ---- */
+function drawTile(){
+  pctx.save();
+  pctx.fillStyle = '#000';
+  pctx.fillRect(0, 0, 72, 72);
+  pctx.translate(72, 72);
+  pctx.rotate(Math.PI);                       // 180 Grad, wie das Deck es will
+  if (chosenImage) {
+    const s = Math.max(72 / chosenImage.width, 72 / chosenImage.height);
+    const w = chosenImage.width * s, h = chosenImage.height * s;
+    pctx.drawImage(chosenImage, (72 - w) / 2, (72 - h) / 2, w, h);
+  }
+  const label = document.getElementById('edLabel').value.trim();
+  if (label) {
+    if (chosenImage) {
+      pctx.fillStyle = 'rgba(0,0,0,.55)';
+      pctx.fillRect(0, 54, 72, 18);
+    }
+    pctx.fillStyle = '#fff';
+    pctx.font = '600 11px system-ui';
+    pctx.textAlign = 'center';
+    pctx.textBaseline = 'middle';
+    pctx.fillText(label, 36, chosenImage ? 63 : 36, 68);
+  }
+  pctx.restore();
+}
+
+function tileAsBase64(){
+  return new Promise(res => preview.toBlob(blob => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.readAsDataURL(blob);
+  }, 'image/jpeg', 0.92));
+}
+
+/* ---- Editor ---- */
+function selectKey(i){
+  selected = i;
+  chosenImage = null;
+  document.getElementById('edImage').value = '';
+  const e = cfg.keys[String(i)] || {};
+  document.getElementById('edKey').textContent = i;
+  document.getElementById('edLabel').value = e.label || '';
+  document.getElementById('edCommand').value = e.command || '';
+  if (e.jpeg) {
+    const img = new Image();
+    img.onload = () => { pctx.drawImage(img, 0, 0); };
+    img.src = 'data:image/jpeg;base64,' + e.jpeg;
+  } else {
+    drawTile();
+  }
+  renderDeck();
+}
+
+document.getElementById('edLabel').addEventListener('input', drawTile);
+document.getElementById('edImage').addEventListener('change', ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => { chosenImage = img; drawTile(); };
+  img.src = URL.createObjectURL(f);
+});
+
+async function post(url, body){
+  const r = await fetch(url, {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  return r.json();
+}
+
+document.getElementById('btnSave').onclick = async () => {
+  drawTile();
+  const jpeg = await tileAsBase64();
+  const label = document.getElementById('edLabel').value.trim();
+  const command = document.getElementById('edCommand').value;
+  await post('/api/key', {key: selected, label, command, jpeg});
+  cfg.keys[String(selected)] = {label, command, jpeg};
+  renderDeck();
+  say(`Taste ${selected} gespeichert.`);
+};
+
+document.getElementById('btnClear').onclick = async () => {
+  await post('/api/key', {key: selected, label: '', command: '', jpeg: ''});
+  cfg.keys[String(selected)] = {};
+  chosenImage = null;
+  document.getElementById('edLabel').value = '';
+  document.getElementById('edCommand').value = '';
+  drawTile(); renderDeck();
+  say(`Taste ${selected} geleert.`);
+};
+
+function say(t){
+  const m = document.getElementById('msg');
+  m.textContent = t;
+  setTimeout(() => { if (m.textContent === t) m.textContent = ''; }, 3000);
+}
+
+/* ---- Helligkeit ---- */
+const slider = document.getElementById('brightness');
+slider.addEventListener('input', () =>
+  document.getElementById('brightVal').textContent = slider.value + '%');
+slider.addEventListener('change', () =>
+  post('/api/brightness', {value: +slider.value}));
+
+/* ---- Status-Poll: Verbindung + Tastendruck-Glow ---- */
+async function poll(){
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const st = document.getElementById('status');
+    st.classList.toggle('on', s.connected);
+    st.textContent = s.connected ? 'verbunden' : 'getrennt';
+    s.keys.forEach((v, i) => keyEl(i).classList.toggle('pressed', !!v));
+  } catch (e) { /* Server weg – naechster Versuch */ }
+}
+setInterval(poll, 400);
+
+/* ---- Init ---- */
+(async () => {
+  cfg = await (await fetch('/api/config')).json();
+  slider.value = cfg.brightness ?? 60;
+  document.getElementById('brightVal').textContent = slider.value + '%';
+  renderDeck();
+  selectKey(0);
+  poll();
+})();
+</script>
+</body>
+</html>
